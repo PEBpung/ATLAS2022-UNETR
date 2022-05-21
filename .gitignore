@@ -1,0 +1,4 @@
+data/Task500_ATLAS/*
+__pycache__
+logs
+wandb
