@@ -15,7 +15,6 @@ def save_checkpoint(args, model, mode, device):
     print("Saving checkpoint", filename)
 
 def run_training(model, model_inferer, loader, optimizer, loss_func, dsc, scheduler, post_pred, device, args):
-    max_epochs = 200
     best_metric = -1
     best_metric_epoch = -1
     metric_count = 0
@@ -26,7 +25,7 @@ def run_training(model, model_inferer, loader, optimizer, loss_func, dsc, schedu
 
     torch.cuda.empty_cache()
 
-    for epoch in range(max_epochs):
+    for epoch in range(args.max_epochs):
         model.train()
         epoch_loss = 0
         step = 0
@@ -38,7 +37,6 @@ def run_training(model, model_inferer, loader, optimizer, loss_func, dsc, schedu
                 batch_data["label"].to(device),
             )
             
-            optimizer.zero_grad()
             with autocast(enabled=args.amp):
                 outputs = model(inputs)
                 loss = loss_func(outputs, labels)
@@ -58,6 +56,9 @@ def run_training(model, model_inferer, loader, optimizer, loss_func, dsc, schedu
         if args.wandb:
             wandb.log({"TRAIN_LOSS": epoch_loss}, step=epoch)
         print(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
+        
+        for param in model.parameters():
+            param.grad = None
 
         if (epoch + 1) % args.val_every == 0:
             model.eval()
@@ -71,7 +72,7 @@ def run_training(model, model_inferer, loader, optimizer, loss_func, dsc, schedu
                         val_data["label"].to(device),
                     )
                     with autocast(enabled=args.amp):
-                        val_outputs = model_inferer(val_inputs)
+                        val_outputs = model(val_inputs)
                     val_outputs = post_pred(val_outputs)
 
                     # compute overall mean dice
@@ -99,7 +100,7 @@ def run_training(model, model_inferer, loader, optimizer, loss_func, dsc, schedu
                     f" at epoch: {best_metric_epoch}"
                 )
         
-        scheduler.step()
+        # scheduler.step()
 
     mode = "final"
     save_checkpoint(args, model, mode, device)
