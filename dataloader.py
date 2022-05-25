@@ -7,11 +7,10 @@ import os
 
 
 def get_loader(args):
-    data_dir, batch_size, workers =  args.data_dir, args.batch_size, args.workers
+    data_dir, batch_size, workers = args.data_dir, args.batch_size, args.workers
 
     roi_size = tuple([args.roi_x, args.roi_y, args.roi_z])
     pixdim = (1.0, 1.0, 1.0)
-
     train_transforms = transforms.Compose(
         [
             # load 4 Nifti images and stack them together
@@ -24,9 +23,9 @@ def get_loader(args):
                 mode=("bilinear", "nearest"),
             ),
             transforms.RandSpatialCropd(keys=["image", "label"], roi_size=roi_size, random_size=False),
-            transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
-            transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
-            transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
+            # transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
+            # transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
+            # transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
             transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
             transforms.RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
             transforms.RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
@@ -44,8 +43,9 @@ def get_loader(args):
                 pixdim=pixdim,
                 mode=("bilinear", "nearest"),
             ),
+            transforms.CenterSpatialCropd(keys=["image", "label"], roi_size=roi_size),
             transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-            transforms.EnsureTyped(keys=["image", "label"]),
+            transforms.ToTensord(keys=["image", "label"]),
         ]
     )
 
