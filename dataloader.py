@@ -51,19 +51,20 @@ def get_loader(args):
         ]
     )
 
-    datalist = load_decathlon_datalist(datalist_json, True, "training", base_dir=data_dir)
+    if args.test_mode == False:
+        datalist = load_decathlon_datalist(datalist_json, True, "training", base_dir=data_dir)
 
-    train_ds = data.CacheDataset(
-        data=datalist, transform=train_transforms, cache_num=args.cache_num, cache_rate=1.0, num_workers=args.workers
-    )
+        train_ds = data.CacheDataset(
+            data=datalist, transform=train_transforms, cache_num=args.cache_num, cache_rate=1.0, num_workers=args.workers
+        )
 
-    train_loader = data.DataLoader(
-        train_ds,
-        batch_size=batch_size,
-        num_workers=workers,
-        pin_memory=True,
-        persistent_workers=True,
-    )
+        train_loader = data.DataLoader(
+            train_ds,
+            batch_size=batch_size,
+            num_workers=workers,
+            pin_memory=True,
+            persistent_workers=True,
+        )
 
     val_files = load_decathlon_datalist(datalist_json, True, "validation", base_dir=data_dir)
     
@@ -71,12 +72,12 @@ def get_loader(args):
 
     val_loader = data.DataLoader(
         val_ds,
-        batch_size=batch_size,
+        batch_size=1,
         shuffle=False,
         num_workers=workers,
         pin_memory=True,
         persistent_workers=True,
     )
 
-    loader = [train_loader, val_loader]
+    loader = val_loader if args.test_mode else [train_loader, val_loader]
     return loader

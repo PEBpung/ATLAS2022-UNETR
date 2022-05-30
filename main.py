@@ -26,6 +26,7 @@ parser.add_argument("--data_dir", default="data/Task500_ATLAS", type=str, help="
 parser.add_argument("--json_list", default="dataset.json", type=str, help="dataset json file")
 parser.add_argument("--max_epochs", default=200, type=int, help="max number of training epochs")
 parser.add_argument("--batch_size", default=2, type=int, help="number of batch size")
+parser.add_argument('--feature_size', default=64, type=int, help='feature size')
 parser.add_argument("--optim_lr", default=1e-4, type=float, help="optimization learning rate")
 parser.add_argument("--workers", default=12, type=int, help="number of workers")
 parser.add_argument("--roi_x", default=128, type=int, help="roi size in x direction")
@@ -44,6 +45,7 @@ parser.add_argument("--cache_num", default=100, type=int, help="seed number")
 def main():
     args = parser.parse_args()
     args.amp = not args.noamp
+    args.test_mode = False
     set_determinism(2022)
 
     device = torch.device("cuda")
@@ -58,7 +60,7 @@ def main():
         in_channels=args.in_channels,
         out_channels=args.out_channels,
         img_size=tuple(roi_size),
-        feature_size=64,
+        feature_size=args.feature_size,
         hidden_size=768,
         mlp_dim=3072,
         num_heads=12,
