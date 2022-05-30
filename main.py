@@ -27,7 +27,7 @@ parser.add_argument("--json_list", default="dataset.json", type=str, help="datas
 parser.add_argument("--max_epochs", default=200, type=int, help="max number of training epochs")
 parser.add_argument("--batch_size", default=2, type=int, help="number of batch size")
 parser.add_argument("--optim_lr", default=1e-4, type=float, help="optimization learning rate")
-parser.add_argument("--workers", default=4, type=int, help="number of workers")
+parser.add_argument("--workers", default=12, type=int, help="number of workers")
 parser.add_argument("--roi_x", default=128, type=int, help="roi size in x direction")
 parser.add_argument("--roi_y", default=128, type=int, help="roi size in y direction")
 parser.add_argument("--roi_z", default=128, type=int, help="roi size in z direction")
@@ -36,8 +36,10 @@ parser.add_argument("--out_channels", default=1, type=int, help="number of outpu
 parser.add_argument("--wandb", action="store_true", help="start wandb")
 parser.add_argument("--noamp", action="store_true", help="do NOT use amp for training")
 parser.add_argument("--val_every", default=10, type=int, help="validation frequency")
-parser.add_argument("--norm_name", default="group", type=str, help="normalize name")
-parser.add_argument("--dropout_rate", default=0.1, type=float, help="dropout rate")
+parser.add_argument("--norm_name", default="instance", type=str, help="normalize name")
+parser.add_argument("--dropout_rate", default=0.0, type=float, help="dropout rate")
+parser.add_argument("--optim_name", default="adamw", type=str, help="optimization algorithm")
+parser.add_argument("--cache_num", default=100, type=int, help="seed number")
 
 def main():
     args = parser.parse_args()
@@ -56,7 +58,7 @@ def main():
         in_channels=args.in_channels,
         out_channels=args.out_channels,
         img_size=tuple(roi_size),
-        feature_size=16,
+        feature_size=64,
         hidden_size=768,
         mlp_dim=3072,
         num_heads=12,
@@ -75,15 +77,14 @@ def main():
         wandb.init(config=vars(args), project="TASK02_ATLAS")
         wandb.watch(model)
 
-    if args.optimizer == 'adamw':
+    if args.optim_name == 'adamw':
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.optim_lr, weight_decay=1e-5)
-    elif args.optimizer == 'adabelief':
+    elif args.optim_name == 'adabelief':
         optimizer = AdaBelief(model.parameters(), lr=1e-3, eps=1e-16, betas=(0.9,0.999), weight_decouple = True, rectify = True)
 
     dice_loss = DiceCELoss(to_onehot_y=False, sigmoid=True)
-    
-    dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=True)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epoch)
+    dice_metric = DiceMetric(include_background=True, reduction="mean")
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.max_epochs)
     post_pred = Compose([Activations(sigmoid=True), AsDiscrete(threshold_values=True)])
 
     model_inferer = partial(

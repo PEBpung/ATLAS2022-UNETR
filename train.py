@@ -3,6 +3,8 @@ from tqdm import tqdm
 import torch
 import os
 import wandb
+import numpy as np
+
 
 def save_checkpoint(args, model, mode, device):
     rand_input = torch.rand(2, args.in_channels, args.roi_x, args.roi_y, args.roi_z).to(device)
@@ -14,13 +16,27 @@ def save_checkpoint(args, model, mode, device):
     del rand_input
     print("Saving checkpoint", filename)
 
+
+class AverageMeter(object):
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = np.where(self.count > 0, self.sum / self.count, self.sum)
+
+
 def run_training(model, model_inferer, loader, optimizer, loss_func, dsc, scheduler, post_pred, device, args):
     best_metric = -1
     best_metric_epoch = -1
-    metric_count = 0
-    metric_sum = 0.0
-    epoch_loss_values = []
-    metric_values = []
     scaler = GradScaler()
 
     torch.cuda.empty_cache()
@@ -36,7 +52,7 @@ def run_training(model, model_inferer, loader, optimizer, loss_func, dsc, schedu
                 batch_data["image"].to(device),
                 batch_data["label"].to(device),
             )
-            
+            optimizer.zero_grad()
             with autocast(enabled=args.amp):
                 outputs = model(inputs)
                 loss = loss_func(outputs, labels)
@@ -48,24 +64,30 @@ def run_training(model, model_inferer, loader, optimizer, loss_func, dsc, schedu
             else:
                 loss.backward()
                 optimizer.step()
-            
+
             epoch_loss += loss.item()
 
+            # compute overall mean dice
+            post_outputs = post_pred(outputs)
+            dsc(y_pred=post_outputs, y=labels)
+
         epoch_loss /= step
-        epoch_loss_values.append(epoch_loss)
+        metric = dsc.aggregate().item()
         if args.wandb:
             wandb.log({"TRAIN_LOSS": epoch_loss}, step=epoch)
-        print(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
-        
+            wandb.log({"TRAIN_DICE": metric}, step=epoch)
+        print(f"epoch {epoch + 1} average train loss: {epoch_loss:.4f}", f"\nmean train dice: {metric:.4f}")
+
+        dsc.reset()
+
         for param in model.parameters():
             param.grad = None
 
         if (epoch + 1) % args.val_every == 0:
             model.eval()
             with torch.no_grad():
-
                 valid_loader = tqdm(loader[1], bar_format="{l_bar}{bar:20}{r_bar}{bar:-10b}")
-                
+
                 for val_data in valid_loader:
                     val_inputs, val_labels = (
                         val_data["image"].to(device),
@@ -73,39 +95,32 @@ def run_training(model, model_inferer, loader, optimizer, loss_func, dsc, schedu
                     )
                     with autocast(enabled=args.amp):
                         val_outputs = model(val_inputs)
-                    val_outputs = post_pred(val_outputs)
 
                     # compute overall mean dice
+                    val_outputs = post_pred(val_outputs)
                     dsc(y_pred=val_outputs, y=val_labels)
-                    value, not_nans = dsc.aggregate()
-                    not_nans = not_nans.mean().item()
-                    metric_count += not_nans
-                    metric_sum += value.mean().item() * not_nans
 
-                metric = metric_sum / metric_count
-                metric_values.append(metric)
-                if metric > best_metric:
+                val_metric = dsc.aggregate().item()
+                if val_metric > best_metric:
                     mode = "best"
                     save_checkpoint(args, model, mode, device)
 
-                    best_metric = metric
+                    best_metric = val_metric
                     best_metric_epoch = epoch + 1
 
                 if args.wandb:
-                    wandb.log({"VALID_DICE": metric}, step=epoch)
+                    wandb.log({"VALID_DICE": val_metric}, step=epoch)
 
                 print(
-                    f"current epoch: {epoch + 1} current mean dice: {metric:.4f}"
+                    f"current epoch: {epoch + 1} current mean val dice: {val_metric:.4f}"
                     f"\nbest mean dice: {best_metric:.4f}"
                     f" at epoch: {best_metric_epoch}"
                 )
-        
+
+            dsc.reset()
         # scheduler.step()
 
     mode = "final"
     save_checkpoint(args, model, mode, device)
 
-    print(
-        f"train completed, best_metric: {best_metric:.4f}"
-        f" at epoch: {best_metric_epoch}"
-    )
+    print(f"train completed, best_metric: {best_metric:.4f}" f" at epoch: {best_metric_epoch}")
