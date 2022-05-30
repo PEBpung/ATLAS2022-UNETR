@@ -2,12 +2,14 @@
 # encoding: utf-8
 
 from monai import transforms, data
+from monai.data import load_decathlon_datalist
 import glob
 import os
 
 
 def get_loader(args):
     data_dir, batch_size, workers = args.data_dir, args.batch_size, args.workers
+    datalist_json = os.path.join(data_dir, args.json_list)
 
     roi_size = tuple([args.roi_x, args.roi_y, args.roi_z])
     pixdim = (1.0, 1.0, 1.0)
@@ -49,14 +51,11 @@ def get_loader(args):
         ]
     )
 
-    train_images = sorted(glob.glob(os.path.join(data_dir, "imagesTr", "*.nii.gz")))
-    train_labels = sorted(glob.glob(os.path.join(data_dir, "labelsTr", "*.nii.gz")))
-    data_dicts = [
-        {"image": image_name, "label": label_name} for image_name, label_name in zip(train_images, train_labels)
-    ]
-    train_files, val_files = data_dicts[:-9], data_dicts[-9:]
+    datalist = load_decathlon_datalist(datalist_json, True, "training", base_dir=data_dir)
 
-    train_ds = data.Dataset(data=train_files, transform=train_transforms)
+    train_ds = data.CacheDataset(
+        data=datalist, transform=train_transforms, cache_num=args.cache_num, cache_rate=1.0, num_workers=args.workers
+    )
 
     train_loader = data.DataLoader(
         train_ds,
@@ -66,6 +65,8 @@ def get_loader(args):
         persistent_workers=True,
     )
 
+    val_files = load_decathlon_datalist(datalist_json, True, "validation", base_dir=data_dir)
+    
     val_ds = data.Dataset(data=val_files, transform=val_transforms)
 
     val_loader = data.DataLoader(
