@@ -39,7 +39,7 @@ def main():
 
     roi_size = (args.roi_x, args.roi_y, args.roi_z)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     pretrained_pth = os.path.join(pretrained_dir, model_name)
     model = torch.jit.load(pretrained_pth)
     model.eval()
@@ -48,7 +48,7 @@ def main():
     with torch.no_grad():
         dice_list_case = []
         for i, batch in enumerate(val_loader):
-            val_inputs, val_labels = (batch["image"].cuda(), batch["label"].cuda())
+            val_inputs, val_labels = (batch["image"].to(device), batch["label"].to(device))
             original_affine = batch['label_meta_dict']['affine'][0].numpy()
             _, _, h, w, d = val_labels.shape
             target_shape = (h, w, d)
