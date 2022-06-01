@@ -1,6 +1,7 @@
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 import torch
+from torch.nn.utils import clip_grad_norm_
 import os
 import wandb
 import numpy as np
@@ -45,6 +46,7 @@ def run_training(model, model_inferer, loader, optimizer, loss_func, dsc, schedu
         model.train()
         epoch_loss = 0
         step = 0
+        max_norm = 5
         train_loader = tqdm(loader[0], bar_format="{l_bar}{bar:20}{r_bar}{bar:-10b}")
         for batch_data in train_loader:
             step += 1
@@ -52,13 +54,15 @@ def run_training(model, model_inferer, loader, optimizer, loss_func, dsc, schedu
                 batch_data["image"].to(device),
                 batch_data["label"].to(device),
             )
-            optimizer.zero_grad()
             with autocast(enabled=args.amp):
                 outputs = model(inputs)
                 loss = loss_func(outputs, labels)
 
+            optimizer.zero_grad()
             if args.amp:
                 scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                clip_grad_norm_(model.parameters(), max_norm)
                 scaler.step(optimizer)
                 scaler.update()
             else:
@@ -67,7 +71,6 @@ def run_training(model, model_inferer, loader, optimizer, loss_func, dsc, schedu
 
             epoch_loss += loss.item()
 
-            # compute overall mean dice
             post_outputs = post_pred(outputs)
             dsc(y_pred=post_outputs, y=labels)
 
@@ -94,7 +97,7 @@ def run_training(model, model_inferer, loader, optimizer, loss_func, dsc, schedu
                         val_data["label"].to(device),
                     )
                     with autocast(enabled=args.amp):
-                        val_outputs = model(val_inputs)
+                        val_outputs = model_inferer(val_inputs)
 
                     # compute overall mean dice
                     val_outputs = post_pred(val_outputs)
