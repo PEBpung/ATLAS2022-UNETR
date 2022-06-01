@@ -46,7 +46,7 @@ def run_training(model, model_inferer, loader, optimizer, loss_func, dsc, schedu
         model.train()
         epoch_loss = 0
         step = 0
-        max_norm = 5
+        max_norm = 0.1
         train_loader = tqdm(loader[0], bar_format="{l_bar}{bar:20}{r_bar}{bar:-10b}")
         for batch_data in train_loader:
             step += 1

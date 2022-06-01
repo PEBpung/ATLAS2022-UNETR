@@ -83,7 +83,7 @@ def main():
         wandb.watch(model)
 
     if args.optim_name == 'adamw':
-        optimizer = torch.optim.AdamW(model.parameters(), lr=args.optim_lr, weight_decay=1e-5)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args.optim_lr, weight_decay=1e-5, eps=1e-4)
     elif args.optim_name == 'adabelief':
         optimizer = AdaBelief(model.parameters(), lr=1e-3, eps=1e-16, betas=(0.9,0.999), weight_decouple = True, rectify = True)
 
