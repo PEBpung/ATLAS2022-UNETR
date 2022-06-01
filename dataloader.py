@@ -3,7 +3,6 @@
 
 from monai import transforms, data
 from monai.data import load_decathlon_datalist
-import glob
 import os
 
 
@@ -15,7 +14,6 @@ def get_loader(args):
     pixdim = (1.0, 1.0, 1.0)
     train_transforms = transforms.Compose(
         [
-            # load 4 Nifti images and stack them together
             transforms.LoadImaged(keys=["image", "label"]),
             transforms.AddChanneld(keys=["image", "label"]),
             transforms.Orientationd(keys=["image", "label"], axcodes="RAS"),
@@ -25,6 +23,7 @@ def get_loader(args):
                 mode=("bilinear", "nearest"),
             ),
             transforms.RandSpatialCropd(keys=["image", "label"], roi_size=roi_size, random_size=False),
+            transforms.RandZoomd(keys=["image", "label"]),
             # transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
             # transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
             # transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
@@ -41,7 +40,6 @@ def get_loader(args):
             transforms.AddChanneld(keys=["image", "label"]),
             transforms.Orientationd(keys=["image", "label"], axcodes="RAS"),
             transforms.Spacingd(keys=["image", "label"], pixdim=pixdim, mode=("bilinear", "nearest")),
-            transforms.CenterSpatialCropd(keys=["image", "label"], roi_size=roi_size),
             transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
             transforms.ToTensord(keys=["image", "label"]),
         ]
@@ -97,7 +95,7 @@ def get_loader(args):
 
         val_loader = data.DataLoader(
             val_ds,
-            batch_size=1,
+            batch_size=2,
             shuffle=False,
             num_workers=workers,
             pin_memory=True,
