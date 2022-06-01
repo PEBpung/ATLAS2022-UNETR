@@ -41,6 +41,8 @@ parser.add_argument("--norm_name", default="instance", type=str, help="normalize
 parser.add_argument("--dropout_rate", default=0.0, type=float, help="dropout rate")
 parser.add_argument("--optim_name", default="adamw", type=str, help="optimization algorithm")
 parser.add_argument("--cache_num", default=100, type=int, help="seed number")
+parser.add_argument('--infer_overlap', default=0.5, type=float, help='sliding window inference overlap')
+parser.add_argument("--experiment_name", default='실험-8', type=str, help="seed number")
 
 def main():
     args = parser.parse_args()
@@ -51,7 +53,7 @@ def main():
     device = torch.device("cuda")
 
     logdir_name = str(dt.datetime.now().strftime("%y-%m-%d"))
-    args.logdir = os.path.join("./logs", logdir_name)
+    args.logdir = os.path.join("./logs", logdir_name, args.experiment_name)
     os.makedirs(args.logdir, exist_ok=True)
 
     roi_size = [args.roi_x, args.roi_y, args.roi_z]
@@ -77,6 +79,7 @@ def main():
 
     if args.wandb:
         wandb.init(config=vars(args), project="TASK02_ATLAS")
+        wandb.run.name = args.experiment_name
         wandb.watch(model)
 
     if args.optim_name == 'adamw':
@@ -92,9 +95,10 @@ def main():
     model_inferer = partial(
         sliding_window_inference,
         roi_size=roi_size,
-        sw_batch_size=2,
+        sw_batch_size=4,
         predictor=model,
-        overlap=0.5,
+        overlap=args.infer_overlap,
+        mode="gaussian"
     )
 
     run_training(
