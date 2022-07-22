@@ -23,13 +23,14 @@ def get_loader(args):
                 mode=("bilinear", "nearest"),
             ),
             transforms.RandSpatialCropd(keys=["image", "label"], roi_size=roi_size, random_size=False),
-            transforms.RandZoomd(keys=["image", "label"]),
-            # transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
-            # transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
-            # transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
+            transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
+            transforms.RandGaussianSmoothd(keys=["image", "label"], prob=0.2),
+            transforms.RandHistogramShiftd(keys=["image", "label"], prob=0.2),
+            transforms.RandCoarseDropoutd(keys=["image", "label"], holes=5, max_holes=10, prob=0.3, max_spatial_size=(28,28,28), spatial_size=(10,10,10)),
+
             transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-            transforms.RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
-            transforms.RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
+            transforms.RandScaleIntensityd(keys="image", factors=0.1, prob=0.1),
+            transforms.RandShiftIntensityd(keys="image", offsets=0.1, prob=0.1),
             transforms.EnsureTyped(keys=["image", "label"]),
         ]
     )
@@ -95,7 +96,7 @@ def get_loader(args):
 
         val_loader = data.DataLoader(
             val_ds,
-            batch_size=2,
+            batch_size=1,
             shuffle=False,
             num_workers=workers,
             pin_memory=True,

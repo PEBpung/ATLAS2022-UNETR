@@ -8,13 +8,16 @@ from dataloader import get_loader
 from utils import resample_3d, dice
 import nibabel as nib
 import argparse
+import pandas as pd
+import warnings
+warnings.filterwarnings(action='ignore')
 
 parser = argparse.ArgumentParser(description='UNETR segmentation pipeline')
-parser.add_argument('--pretrained_dir', default='./logs/22-05-27', type=str, help='pretrained checkpoint directory')
+parser.add_argument('--pretrained_dir', default='./logs/22-06-07', type=str, help='pretrained checkpoint directory')
 parser.add_argument('--data_dir', default='data/Task500_ATLAS', type=str, help='dataset directory')
 parser.add_argument("--batch_size", default=2, type=int, help="number of batch size")
-parser.add_argument('--exp_name', default='Task500_ATLAS', type=str, help='experiment name')
-parser.add_argument('--json_list', default='dataset.json', type=str, help='dataset json file')
+parser.add_argument('--exp_name', default='실험-13', type=str, help='experiment name')
+parser.add_argument('--json_list', default='dataset_501.json', type=str, help='dataset json file')
 parser.add_argument('--pretrained_model_name', default='best_model_jit.pt', type=str, help='pretrained model name')
 parser.add_argument('--infer_overlap', default=0.5, type=float, help='sliding window inference overlap')
 parser.add_argument('--in_channels', default=1, type=int, help='number of input channels')
@@ -39,33 +42,33 @@ def main():
 
     roi_size = (args.roi_x, args.roi_y, args.roi_z)
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    pretrained_pth = os.path.join(pretrained_dir, model_name)
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    pretrained_pth = os.path.join(pretrained_dir, args.exp_name, model_name)
     model = torch.jit.load(pretrained_pth)
     model.eval()
     model.to(device)
     post_pred = Compose([Activations(sigmoid=True), AsDiscrete(threshold_values=True)])
+    
     with torch.no_grad():
         dice_list_case = []
+        img_name_list = []
         for i, batch in enumerate(val_loader):
             val_inputs, val_labels = (batch["image"].to(device), batch["label"].to(device))
             original_affine = batch['label_meta_dict']['affine'][0].numpy()
             _, _, h, w, d = val_labels.shape
             target_shape = (h, w, d)
             img_name = batch['image_meta_dict']['filename_or_obj'][0].split('/')[-1]
+            img_name = f'sub-r{img_name[3:-16]}s{img_name[7:-12]}'
             print("Inference on case {}".format(img_name))
+            img_name_list.append(img_name)
             val_outputs = sliding_window_inference(val_inputs,
                                                    roi_size,
-                                                   4,
+                                                   2,
                                                    model,
                                                    overlap=args.infer_overlap,
                                                    mode="gaussian")
             
-            val_outputs = post_pred(val_outputs)
-            val_outputs = [
-                KeepLargestConnectedComponent(applied_labels=[1], connectivity=1)(i)
-                for i in val_outputs
-            ][0]
+            val_outputs = post_pred(val_outputs)[0]
             val_outputs = val_outputs.cpu().numpy().astype(np.uint8)[0]
             val_labels = val_labels.cpu().numpy()[0, 0, :, :, :]
             val_outputs = resample_3d(val_outputs, target_shape)
@@ -75,6 +78,9 @@ def main():
             dice_list_case.append(organ_Dice)
             nib.save(nib.Nifti1Image(val_outputs.astype(np.uint8), original_affine),
                      os.path.join(output_directory, img_name))
+            
+        df = pd.DataFrame({'Subject ID': img_name_list, 'Dice': dice_list_case})
+        df.to_excel(os.path.join(output_directory, 'evaluaion_dice.xlsx'), index=False)
 
         print("Overall Mean Dice: {}".format(np.mean(dice_list_case)))
 

@@ -1,0 +1,7 @@
+monai==0.9.0
+torch==1.11.0
+nibabel==3.2.2
+wandb==0.12.16
+tqdm==4.64.0
+scipy==1.8.0
+adabelief-pytorch==0.2.1

@@ -1,5 +1,6 @@
-data/Task500_ATLAS/*
+data/*
 __pycache__
 logs
 wandb
 outputs
+pretrained_models

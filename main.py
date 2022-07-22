@@ -1,4 +1,4 @@
-from monai.networks.nets import UNETR
+from monai.networks.nets import UNETR, SwinUNETR
 from monai.losses import DiceCELoss
 from monai.metrics import DiceMetric
 from monai.utils import set_determinism
@@ -8,6 +8,8 @@ from functools import partial
 from train import run_training
 from dataloader import get_loader
 from adabelief_pytorch import AdaBelief
+from madgrad import MADGRAD
+
 import gc
 import os
 import torch
@@ -23,10 +25,10 @@ gc.collect()
 parser = argparse.ArgumentParser(description="UNETR segmentation pipeline")
 parser.add_argument("--logdir", default="logs", type=str, help="directory to save the tensorboard logs")
 parser.add_argument("--data_dir", default="data/Task500_ATLAS", type=str, help="dataset directory")
-parser.add_argument("--json_list", default="dataset.json", type=str, help="dataset json file")
-parser.add_argument("--max_epochs", default=200, type=int, help="max number of training epochs")
-parser.add_argument("--batch_size", default=2, type=int, help="number of batch size")
-parser.add_argument('--feature_size', default=64, type=int, help='feature size')
+parser.add_argument("--json_list", default="dataset_501.json", type=str, help="dataset json file")
+parser.add_argument("--max_epochs", default=600, type=int, help="max number of training epochs")
+parser.add_argument("--batch_size", default=6, type=int, help="number of batch size")
+parser.add_argument('--feature_size', default=48, type=int, help='feature size')
 parser.add_argument("--optim_lr", default=1e-4, type=float, help="optimization learning rate")
 parser.add_argument("--workers", default=12, type=int, help="number of workers")
 parser.add_argument("--roi_x", default=128, type=int, help="roi size in x direction")
@@ -36,13 +38,16 @@ parser.add_argument("--in_channels", default=1, type=int, help="number of input 
 parser.add_argument("--out_channels", default=1, type=int, help="number of output channels")
 parser.add_argument("--wandb", action="store_true", help="start wandb")
 parser.add_argument("--noamp", action="store_true", help="do NOT use amp for training")
-parser.add_argument("--val_every", default=10, type=int, help="validation frequency")
+parser.add_argument("--val_every", default=5, type=int, help="validation frequency")
 parser.add_argument("--norm_name", default="instance", type=str, help="normalize name")
 parser.add_argument("--dropout_rate", default=0.0, type=float, help="dropout rate")
 parser.add_argument("--optim_name", default="adamw", type=str, help="optimization algorithm")
 parser.add_argument("--cache_num", default=100, type=int, help="seed number")
 parser.add_argument('--infer_overlap', default=0.5, type=float, help='sliding window inference overlap')
-parser.add_argument("--experiment_name", default='실험-8', type=str, help="seed number")
+parser.add_argument("--experiment_name", default='실험-15', type=str, help="seed number")
+parser.add_argument('--use_checkpoint', action='store_true', help='use gradient checkpointing to save memory')
+parser.add_argument('--dropout_path_rate', default=0.0, type=float, help='drop path rate')
+parser.add_argument("--model_name", default="swin-unetr", type=str, help="model name")
 
 def main():
     args = parser.parse_args()
@@ -56,21 +61,32 @@ def main():
     args.logdir = os.path.join("./logs", logdir_name, args.experiment_name)
     os.makedirs(args.logdir, exist_ok=True)
 
-    roi_size = [args.roi_x, args.roi_y, args.roi_z]
+    roi_size = (args.roi_x, args.roi_y, args.roi_z)
 
-    model = UNETR(
-        in_channels=args.in_channels,
-        out_channels=args.out_channels,
-        img_size=tuple(roi_size),
-        feature_size=args.feature_size,
-        hidden_size=768,
-        mlp_dim=3072,
-        num_heads=12,
-        pos_embed="perceptron",
-        norm_name=args.norm_name,
-        res_block=True,
-        dropout_rate=args.dropout_rate,
-    )
+    if args.model_name == "unetr":
+        model = UNETR(
+            in_channels=args.in_channels,
+            out_channels=args.out_channels,
+            img_size=roi_size,
+            feature_size=args.feature_size,
+            hidden_size=768,
+            mlp_dim=3072,
+            num_heads=12,
+            pos_embed="perceptron",
+            norm_name=args.norm_name,
+            res_block=True,
+            dropout_rate=args.dropout_rate,
+        )
+    if args.model_name == "swin-unetr":
+        model = SwinUNETR(img_size=roi_size,
+                        in_channels=args.in_channels,
+                        out_channels=args.out_channels,
+                        feature_size=args.feature_size,
+                        drop_rate=0.0,
+                        attn_drop_rate=0.0,
+                        dropout_path_rate=args.dropout_path_rate,
+                        use_checkpoint=args.use_checkpoint,
+                        )
 
     model = nn.DataParallel(model, output_device=0)
     model.to(device)
@@ -86,7 +102,13 @@ def main():
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.optim_lr, weight_decay=1e-5, eps=1e-4)
     elif args.optim_name == 'adabelief':
         optimizer = AdaBelief(model.parameters(), lr=1e-3, eps=1e-16, betas=(0.9,0.999), weight_decouple = True, rectify = True)
-
+    elif args.optim_name == "madgrad":
+        optimizer = MADGRAD(
+            model.parameters(),
+            lr=args.optim_lr,
+            momentum=0.99,
+            weight_decay=1e-5,
+        )
     dice_loss = DiceCELoss(to_onehot_y=False, sigmoid=True)
     dice_metric = DiceMetric(include_background=True, reduction="mean")
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.max_epochs)
